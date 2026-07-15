@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ToonHive — Original 2D Animation</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- AdsGram SDK — safe to always include, it's only used for episodes set to adNetwork:'adsgram' -->
+<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+<!-- Monetag SDK — Monetag gives you a real script URL + zone ID once you create a
+     "Telegram Mini App" zone in your Monetag dashboard. It looks like:
+     <script src="https://YOUR-MONETAG-DOMAIN/sdk.js" data-zone="123456" data-sdk="show_123456"></script>
+     Paste your real tag here (replacing the commented line below), then set
+     AD_CONFIG.monetagZoneId further down in the script to the same zone ID. -->
+<!-- <script src="https://REPLACE-WITH-YOUR-MONETAG-DOMAIN/sdk.js" data-zone="XXX" data-sdk="show_XXX"></script> -->
+<script>
+/* =============================================================================
+   ToonHive shared data layer
+   Used by BOTH index.html (public site) and admin.html (admin panel).
+   Data lives in this browser's localStorage under the key 'toonhive_data',
+   so admin.html and index.html must be hosted on the SAME domain to share it.
+
+   IMPORTANT — this is a front-end-only demo data store:
+   - Changes made in admin.html are saved to THIS browser only (localStorage
+     is per-browser, per-device). Visitors on other devices won't see admin
+     edits made here unless you wire this up to a real backend/database.
+   - Use the Export/Import JSON feature in admin.html to move data between
+     browsers, or to back it up, until you add a real backend.
+   ============================================================================= */
+
+const ToonHiveData = (function(){
+  const STORAGE_KEY = 'toonhive_data';
+
+  const PALETTE = ['#0f766e,#134e4a','#7c3aed,#4c1d95','#1e3a5f,#0f172a','#b45309,#78350f'];
+  const EMOJI = ['🐝','🍯','🌻','🦋','🍂','🌾','🍄','🌙'];
+  const TITLES = [
+    'Hollow Meadow Chronicles','The Last Beekeeper','Nectar & Static','Paper Moth Diaries',
+    'Rustling Hollow','Static Orchard','The Wandering Hive','Amber Season','Loomwood Tales',
+    'Sundown Apiary','Glass Pollen','The Quiet Swarm'
+  ];
+  const ALT_TITLES=[
+    ['Hollow Meadow'], ['Beekeeper Chronicles','TLB'], ['Nectar Static'], ['Moth Diaries'],
+    ['Hollow Rustle'], ['Orchard Static'], ['Wandering Hive Tales'], ['Amber Days'],
+    ['Loomwood Saga'], ['Sundown Apiary Tales'], ['Pollen Glass'], ['Quiet Swarm Saga']
+  ];
+  const GENRE_SETS=[['Adventure','Fantasy'],['Slice of Life','Comedy'],['Drama','Original'],['Fantasy','Original']];
+  const AUDIO_SETS=['Hindi | English','Hindi | English | Japanese','English | Japanese'];
+  const EP_COUNTS=[12,13,24,26];
+  const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul'];
+  const LANGS = ['Hindi','Tamil','Telugu','English','Japanese'];
+  const DAYS = ['Friday','Saturday','Sunday','Monday'];
+
+  function randomDate(){ return `${MONTHS[Math.floor(Math.random()*MONTHS.length)]} ${Math.ceil(Math.random()*28)}, 2026`; }
+  function uid(prefix){ return prefix + Math.random().toString(36).slice(2,9); }
+
+  function buildDefaultCatalog(){
+    return TITLES.map((t,i)=>{
+      const g = PALETTE[i % PALETTE.length].split(',');
+      const epCount = Math.min(EP_COUNTS[i % EP_COUNTS.length], 12); // demo cap
+      return {
+        id: 'c'+i,
+        shortTitle: t,
+        altTitles: ALT_TITLES[i].slice(),
+        title: t + ' Season 1 — Hindi, English (Multi Audio) Episodes',
+        emoji: EMOJI[i % EMOJI.length],
+        grad: `linear-gradient(150deg, ${g[0]}, ${g[1]})`,
+        date: randomDate(),
+        genres: GENRE_SETS[i % GENRE_SETS.length].slice(),
+        audio: AUDIO_SETS[i % AUDIO_SETS.length],
+        episodes: epCount,
+        quality: '480p | 720p | 1080p',
+        pinned: i<2,
+        episodesData: Array.from({length: epCount}, (_,n)=>({
+          number: n+1,
+          date: randomDate(),
+          adNetwork: n % 2 === 0 ? 'adsgram' : 'monetag',
+          url: '#'
+        }))
+      };
+    });
+  }
+
+  function buildDefaultSchedule(catalog){
+    return catalog.slice(0,4).map((c,i)=>{
+      const future = new Date(Date.now() + (i+1)*36*3600*1000 + i*1500000);
+      return {
+        id: uid('s'),
+        catalogId: c.id,
+        season: 1 + (i % 2),
+        episode: 8 + i,
+        activeLang: LANGS[i % LANGS.length],
+        langs: LANGS.slice(0, 2 + (i % 4)),
+        day: DAYS[i % DAYS.length],
+        time: (5 + i) % 12 + 1 + ':00 ' + (i % 2 === 0 ? 'PM' : 'AM'),
+        nextEpisodeAt: future.toISOString()
+      };
+    });
+  }
+
+  function buildDefaultAdConfig(){
+    return { adsgramBlockId: 'your-block-id', monetagZoneId: 'XXX' };
+  }
+
+  function buildDefaults(){
+    const catalog = buildDefaultCatalog();
+    return {
+      catalog,
+      schedule: buildDefaultSchedule(catalog),
+      adConfig: buildDefaultAdConfig()
+    };
+  }
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && parsed.catalog && parsed.schedule && parsed.adConfig) return parsed;
+      }
+    }catch(e){ console.warn('ToonHiveData: failed to read localStorage, using defaults.', e); }
+    const defaults = buildDefaults();
+    save(defaults);
+    return defaults;
+  }
+
+  function save(data){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      return true;
+    }catch(e){
+      console.error('ToonHiveData: failed to save to localStorage.', e);
+      return false;
+    }
+  }
+
+  function reset(){
+    localStorage.removeItem(STORAGE_KEY);
+    return load();
+  }
+
+  return {
+    STORAGE_KEY, LANGS, DAYS,
+    randomDate, uid,
+    buildDefaultCatalog, buildDefaultSchedule, buildDefaultAdConfig,
+    load, save, reset
+  };
+})();
+window.ToonHiveData = ToonHiveData; // so the type="module" script further down can reach it
+
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#131722;
+    --surface:#1a2030;
+    --surface-raised:#212840;
+    --line:#2a3149;
+    --header-a:#0f766e;
+    --header-b:#1e3a5f;
+    --cyan:#4fd1e8;
+    --honey:#f5a623;
+    --cream:#e9edf5;
+    --muted:#8b93ab;
+    --pin-bg:#20304a;
+  }
+  [data-theme="light"]{
+    --bg:#f4f6fb;
+    --surface:#ffffff;
+    --surface-raised:#eef1f8;
+    --line:#dde3ef;
+    --cream:#1a2030;
+    --muted:#667;
+    --pin-bg:#e4ecff;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);color:var(--cream);
+    font-family:'Work Sans',sans-serif;
+    transition:background .25s ease,color .25s ease;
+  }
+  a{color:inherit;text-decoration:none;}
+  button{font-family:inherit;cursor:pointer;}
+  h1,h2,h3{font-family:'Baloo 2',cursive;}
+
+  /* ---------- header ---------- */
+  header{
+    position:sticky;top:0;z-index:40;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 18px;
+    background:linear-gradient(120deg,var(--header-a),var(--header-b));
+  }
+  .icon-btn{
+    width:42px;height:42px;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,0.16);border:none;color:#fff;
+  }
+  .icon-btn:hover{background:rgba(255,255,255,0.26);}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .mascot{
+    width:38px;height:38px;border-radius:50%;
+    background:radial-gradient(circle at 32% 28%, #ffd873, var(--honey) 60%, #b9740c 100%);
+    display:flex;align-items:center;justify-content:center;font-size:20px;
+    box-shadow:0 0 0 2px rgba(255,255,255,0.25);
+  }
+  .brand h1{font-size:22px;color:#fff;margin:0;letter-spacing:.3px;}
+  .brand h1 span{color:#ffe08a;}
+
+  /* ---------- drawer ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:49;opacity:0;pointer-events:none;transition:opacity .2s ease;}
+  .scrim.open{opacity:1;pointer-events:auto;}
+  .drawer{
+    position:fixed;top:0;left:0;bottom:0;width:260px;z-index:50;
+    background:var(--surface);border-right:1px solid var(--line);
+    transform:translateX(-100%);transition:transform .25s ease;
+    padding:20px 18px;display:flex;flex-direction:column;gap:2px;
+  }
+  .drawer.open{transform:translateX(0);}
+  .drawer a{padding:12px 10px;border-radius:8px;font-size:15px;display:flex;gap:10px;}
+  .drawer a:hover{background:var(--surface-raised);color:var(--cyan);}
+  .drawer .cat{font-family:'JetBrains Mono';font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin:16px 0 6px 10px;}
+
+  /* ---------- search overlay ---------- */
+  .search-overlay{
+    position:fixed;inset:0;z-index:60;background:rgba(10,12,20,.97);
+    display:flex;flex-direction:column;align-items:center;padding-top:80px;
+    opacity:0;pointer-events:none;transition:opacity .2s ease;
+  }
+  .search-overlay.open{opacity:1;pointer-events:auto;}
+  .search-box{width:90%;max-width:520px;display:flex;gap:10px;align-items:center;border-bottom:2px solid var(--cyan);padding-bottom:10px;}
+  .search-box input{flex:1;background:none;border:none;color:#fff;font-size:20px;outline:none;}
+  .search-close{color:var(--muted);font-size:13px;margin-top:18px;}
+  .search-results{width:90%;max-width:520px;margin-top:16px;overflow-y:auto;max-height:60vh;}
+  .search-hit{
+    display:flex;align-items:center;gap:14px;padding:12px 8px;border-bottom:1px solid var(--line);
+  }
+  .search-hit .hit-thumb{
+    width:52px;height:52px;border-radius:10px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;font-size:22px;
+  }
+  .search-hit .hit-title{font-size:14.5px;color:var(--cream);font-weight:600;line-height:1.3;}
+  .search-hit .hit-alt{font-size:11.5px;color:var(--muted);margin-top:3px;}
+  .search-empty{color:var(--muted);font-size:13px;text-align:center;margin-top:20px;}
+
+  /* ---------- content ---------- */
+  .feed{max-width:640px;margin:0 auto;padding:16px 14px 10px;}
+
+  .post{
+    background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    overflow:hidden;margin-bottom:22px;animation:rise .35s ease both;
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+  .post-thumb{position:relative;aspect-ratio:16/9;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:48px;}
+  .post-thumb::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.35),transparent 50%);}
+  .pin-pill{
+    position:absolute;top:12px;right:12px;z-index:2;
+    background:var(--pin-bg);color:var(--cream);
+    font-size:13px;font-weight:600;padding:6px 13px;border-radius:20px;
+    display:flex;align-items:center;gap:5px;
+    box-shadow:0 2px 8px rgba(0,0,0,.35);
+  }
+  .post-body{padding:16px 18px 18px;}
+  .post-body h2{font-size:19px;line-height:1.35;color:var(--cyan);margin:0 0 8px;font-weight:700;}
+  .byline{font-family:'JetBrains Mono';font-size:12px;color:var(--muted);}
+
+  /* ---------- ad / stay connected sections ---------- */
+  .block-heading{font-size:20px;margin:26px 0 14px;color:var(--cream);}
+  .tg-banner{
+    display:block;background:#fff;border-radius:12px;padding:18px 20px;
+    display:flex;align-items:center;gap:16px;margin-bottom:26px;
+  }
+  .tg-banner .tg-ico{
+    width:48px;height:48px;border-radius:10px;background:#28a8ea;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .tg-banner strong{color:#111;font-size:17px;display:block;}
+  .tg-banner span{color:#555;font-size:12px;}
+
+  .ad-block{
+    border:1px dashed var(--line);border-radius:12px;padding:20px;
+    text-align:center;margin-bottom:26px;background:var(--surface);
+  }
+  .ad-label{font-family:'JetBrains Mono';font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:10px;}
+  .ad-inner{
+    min-height:100px;border-radius:8px;
+    background:repeating-linear-gradient(135deg,var(--surface-raised),var(--surface-raised) 10px,var(--surface) 10px,var(--surface) 20px);
+    display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-family:'JetBrains Mono';
+  }
+
+  /* ---------- loader / pagination ---------- */
+  .loader{display:flex;justify-content:center;align-items:center;gap:10px;padding:24px;font-family:'JetBrains Mono';font-size:12px;color:var(--muted);}
+  .spin{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--cyan);animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .pagination{display:none;flex-direction:column;align-items:center;gap:14px;padding:6px 14px 40px;}
+  .page-nums{display:flex;gap:8px;}
+  .page-nums a{
+    width:38px;height:38px;border-radius:50%;border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--muted);
+  }
+  .page-nums a.active{background:var(--cyan);color:#0b1420;border-color:var(--cyan);font-weight:700;}
+  .next-btn{
+    width:100%;max-width:300px;text-align:center;padding:13px;border:1px solid var(--line);border-radius:24px;
+    color:var(--cream);font-size:14px;
+  }
+  .end-msg{text-align:center;padding:6px 20px 20px;font-family:'JetBrains Mono';font-size:12px;color:var(--muted);}
+
+  /* ---------- theme toggle ---------- */
+  .theme-toggle{
+    position:fixed;bottom:22px;right:18px;z-index:45;
+    width:52px;height:52px;border-radius:50%;
+    background:var(--surface-raised);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:20px;
+    box-shadow:0 4px 16px rgba(0,0,0,.4);
+  }
+
+  /* ---------- detail view ---------- */
+  .post-link{display:block;cursor:pointer;}
+  .detail{max-width:640px;margin:0 auto;padding:16px 16px 40px;display:none;}
+  .back-btn{
+    display:inline-flex;align-items:center;gap:6px;color:var(--muted);
+    font-size:13px;margin-bottom:16px;padding:8px 4px;
+  }
+  .detail-hero{
+    aspect-ratio:16/9;border-radius:14px;overflow:hidden;margin-bottom:20px;
+    display:flex;align-items:center;justify-content:center;font-size:60px;position:relative;
+  }
+  .detail h1{font-size:26px;line-height:1.3;margin:0 0 4px;color:var(--cream);}
+  .detail .byline{margin-bottom:20px;display:block;}
+  .info-heading{font-size:19px;margin:0 0 12px;color:var(--cream);}
+  .info-list{list-style:none;padding:0;margin:0 0 24px;display:flex;flex-direction:column;gap:11px;}
+  .info-list li{font-size:14.5px;color:var(--cream);padding-left:16px;position:relative;line-height:1.5;}
+  .info-list li::before{content:'•';position:absolute;left:0;color:var(--cyan);}
+  .info-list b{font-weight:700;}
+  .dl-btn{
+    display:block;width:100%;text-align:center;padding:16px;border-radius:30px;
+    background:var(--cyan);color:#0b1420;font-weight:700;font-size:16px;
+    border:2px dashed rgba(255,255,255,0.35);margin-bottom:22px;
+  }
+  .divider{height:1px;background:var(--line);margin:0 0 26px;}
+  .related{
+    display:block;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    overflow:hidden;margin-bottom:16px;
+  }
+  .related .rel-thumb{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;font-size:40px;position:relative;}
+  .related .rel-body{padding:14px 16px;}
+  .related h3{font-size:15.5px;color:var(--cyan);margin:0 0 6px;line-height:1.3;}
+
+  /* ---------- episodes view ---------- */
+  .episodes{max-width:640px;margin:0 auto;padding:16px 16px 40px;display:none;}
+  .episodes h1{font-size:22px;line-height:1.35;margin:0 0 18px;color:var(--cream);}
+  .ep-block{padding:22px 0;border-bottom:1px solid var(--line);text-align:center;}
+  .ep-block:last-child{border-bottom:none;}
+  .ep-block h2{font-size:20px;margin:0 0 10px;color:var(--cream);}
+  .ep-date{color:#e0563c;font-size:13px;margin-bottom:16px;}
+  .ep-dl{
+    display:inline-block;padding:11px 32px;border-radius:24px;
+    background:var(--cyan);color:#0b1420;font-weight:700;font-size:14px;
+  }
+
+  /* ---------- release schedule view ---------- */
+  .schedule{max-width:680px;margin:0 auto;padding:26px 16px 40px;display:none;}
+  .sched-head{display:flex;align-items:center;gap:14px;margin-bottom:16px;}
+  .sched-icon{
+    width:52px;height:52px;border-radius:14px;background:var(--surface-raised);
+    display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;
+  }
+  .sched-head h1{font-size:28px;color:var(--cyan);margin:0;}
+  .sched-head h1 span{color:var(--cream);}
+  .sched-tz{
+    display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:7px 16px;margin-bottom:20px;
+  }
+  .sched-search{
+    display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;padding:13px 16px;margin-bottom:22px;
+  }
+  .sched-search input{flex:1;background:none;border:none;color:var(--cream);font-size:14.5px;outline:none;}
+  .sched-section-tag{
+    border-left:3px solid var(--honey);padding:10px 16px;font-weight:700;color:var(--cream);
+    background:var(--surface);border-radius:0 10px 10px 0;margin-bottom:18px;font-size:15px;
+  }
+  .sched-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:18px;margin-bottom:20px;
+  }
+  .sched-row{display:flex;gap:16px;margin-bottom:16px;}
+  .sched-poster{
+    width:96px;min-width:96px;aspect-ratio:2/3;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;font-size:34px;
+  }
+  .sched-info h3{font-size:17px;line-height:1.3;margin:0 0 10px;color:var(--cream);}
+  .pill-row{display:flex;flex-wrap:wrap;gap:7px;}
+  .pill{
+    font-size:11.5px;padding:5px 12px;border-radius:20px;border:1px solid var(--line);color:var(--muted);
+  }
+  .pill.solid{background:var(--surface-raised);color:var(--cream);}
+  .pill.active{background:var(--honey);color:#1a1408;border-color:var(--honey);font-weight:700;}
+  .lang-row{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0;}
+  .meta-row{display:flex;gap:8px;margin-top:4px;}
+  .countdown-box{
+    background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:18px;text-align:center;
+  }
+  .countdown-box .cd-label{font-size:11px;letter-spacing:1.5px;color:var(--muted);margin-bottom:14px;font-family:'JetBrains Mono';}
+  .cd-tiles{display:flex;gap:10px;justify-content:center;}
+  .cd-tile{
+    background:var(--surface-raised);border-radius:10px;padding:12px 4px;min-width:60px;flex:1;max-width:80px;
+  }
+  .cd-tile b{display:block;font-size:22px;color:var(--cream);}
+  .cd-tile span{font-size:10px;color:var(--muted);letter-spacing:1px;}
+
+  /* ---------- rewarded interstitial modal ---------- */
+  .ad-modal-scrim{
+    position:fixed;inset:0;z-index:80;background:rgba(6,8,14,.94);
+    display:none;align-items:center;justify-content:center;padding:20px;
+  }
+  .ad-modal-box{
+    width:100%;max-width:340px;background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;padding:26px 22px;text-align:center;
+  }
+  .ad-modal-label{font-family:'JetBrains Mono';font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:14px;}
+  .ad-modal-visual{
+    height:150px;border-radius:10px;margin-bottom:18px;
+    background:repeating-linear-gradient(135deg,var(--surface-raised),var(--surface-raised) 10px,var(--bg) 10px,var(--bg) 20px);
+    display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-family:'JetBrains Mono';padding:0 12px;text-align:center;
+  }
+  .ad-modal-ring{
+    width:56px;height:56px;border-radius:50%;margin:0 auto 14px;
+    border:3px solid var(--line);border-top-color:var(--cyan);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:var(--cream);
+    animation:spin .9s linear infinite;
+  }
+  .ad-modal-ring span{display:inline-block;animation:unspin .9s linear infinite;}
+  @keyframes unspin{to{transform:rotate(-360deg);}}
+  .ad-modal-note{font-size:12.5px;color:var(--muted);margin-bottom:4px;}
+  .ad-modal-continue{
+    display:none;width:100%;margin-top:14px;padding:12px;border-radius:24px;
+    background:var(--cyan);color:#0b1420;font-weight:700;font-size:14px;
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<header>
+  <button class="icon-btn" id="menuBtn" aria-label="Menu">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div class="brand">
+    <div class="mascot">🐝</div>
+    <h1>Toon<span>Hive</span></h1>
+  </div>
+  <button class="icon-btn" id="searchBtn" aria-label="Search">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  </button>
+</header>
+
+<div class="scrim" id="scrim"></div>
+<nav class="drawer" id="drawer">
+  <div class="brand" style="margin-bottom:14px;">
+    <div class="mascot">🐝</div>
+    <h1 style="font-size:18px;">Toon<span>Hive</span></h1>
+  </div>
+  <div class="cat">Browse</div>
+  <a href="#" id="navHome">Home</a>
+  <a href="#" id="navAllSeries">All Series</a>
+  <a href="#" id="navSchedule">Release Schedule</a>
+  <a href="#">Genres</a>
+  <a href="#">New Releases</a>
+  <div class="cat">Hive</div>
+  <a href="#">About ToonHive</a>
+  <a href="#">Telegram Channel</a>
+  <a href="#">Contact / Submit Work</a>
+</nav>
+
+<div class="search-overlay" id="searchOverlay">
+  <div class="search-box">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b93ab" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="searchInput" placeholder="Search series, episodes, tags..." autocomplete="off">
+  </div>
+  <div class="search-results" id="searchResults"></div>
+  <div class="search-close" id="searchClose">ESC to close</div>
+</div>
+
+<main class="feed" id="feed"></main>
+
+<section class="detail" id="detailView">
+  <div class="back-btn" id="backBtn">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+    Back to feed
+  </div>
+  <div class="detail-hero" id="detailHero"></div>
+  <h1 id="detailTitle"></h1>
+  <span class="byline" id="detailByline"></span>
+  <h2 class="info-heading">Series Information</h2>
+  <ul class="info-list" id="detailInfo"></ul>
+  <a href="#" class="dl-btn">Download / Watch</a>
+  <div class="divider"></div>
+  <h2 class="info-heading">You may also like</h2>
+  <div id="relatedList"></div>
+</section>
+
+<section class="episodes" id="episodesView">
+  <div class="back-btn" id="backBtn2">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+    Back to series page
+  </div>
+  <h1 id="episodesTitle"></h1>
+  <div class="tg-banner" style="margin-bottom:22px;">
+    <div class="tg-ico">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><path d="M21.5 4.5L2.7 11.9c-1.1.4-1.1 1.5 0 1.9l4.7 1.5 1.8 5.7c.2.6 1 .7 1.4.2l2.5-2.9 4.8 3.6c.7.5 1.7.1 1.9-.8l3.4-15.5c.2-1-.7-1.8-1.7-1.1z"/></svg>
+    </div>
+    <div><strong>Join our Telegram Channel</strong><span>Get notified on every episode upload</span></div>
+  </div>
+  <div id="episodeList"></div>
+</section>
+
+<section class="schedule" id="scheduleView">
+  <div class="sched-head">
+    <div class="sched-icon">📺</div>
+    <h1>Release <span>Schedule</span></h1>
+  </div>
+  <div class="sched-tz">🕐 IST (Indian Standard Time)</div>
+  <div class="sched-search">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8b93ab" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="scheduleSearch" placeholder="Search series by name...">
+  </div>
+  <div class="sched-section-tag">🔥 Ongoing Releases</div>
+  <div id="scheduleList"></div>
+</section>
+
+<div class="ad-modal-scrim" id="adModalScrim">
+  <div class="ad-modal-box">
+    <div class="ad-modal-label">Advertisement</div>
+    <div class="ad-modal-ring" id="adCountdown"><span>5</span></div>
+    <div class="ad-modal-visual">/* your Monetag or AdsGram rewarded interstitial renders here */</div>
+    <div class="ad-modal-note" id="adNote">Please wait — your download unlocks after this ad</div>
+    <a href="#" class="ad-modal-continue" id="adContinueBtn">Continue to episode →</a>
+  </div>
+</div>
+
+<div class="loader" id="loader"><div class="spin"></div> loading more...</div>
+
+<div class="pagination" id="pagination">
+  <div class="page-nums" id="pageNums"></div>
+  <a href="#" class="next-btn">Next →</a>
+</div>
+<div class="end-msg" id="endMsg" style="display:none;">🐝 you've reached the bottom of the hive</div>
+
+<button class="theme-toggle" id="themeToggle">🌙</button>
+
+<script type="module">
+/* =========================================================================
+   FIREBASE (optional) — fill in firebaseConfig below once you've created a
+   Firebase project + Firestore database, and this site will read LIVE data
+   from Firestore instead of local demo data.
+
+   Until you fill it in, firebaseReady stays false and the site keeps
+   working exactly as before (ToonHiveData's local/localStorage data) —
+   nothing breaks, and no Firebase SDK is even downloaded, if you haven't
+   set up Firebase yet.
+   ========================================================================= */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+const firebaseReady = firebaseConfig.apiKey !== "YOUR_API_KEY";
+let db = null, fs = null;
+
+async function loadAllData(){
+  if(!firebaseReady) return ToonHiveData.load();
+  try{
+    if(!db){
+      const [{ initializeApp }, firestoreMod] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js")
+      ]);
+      fs = firestoreMod;
+      const fbApp = initializeApp(firebaseConfig);
+      db = fs.getFirestore(fbApp);
+    }
+    const seriesSnap = await fs.getDocs(fs.collection(db,'series'));
+    const catalog = seriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const scheduleSnap = await fs.getDocs(fs.collection(db,'schedule'));
+    const schedule = scheduleSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const configSnap = await fs.getDoc(fs.doc(db,'config','adConfig'));
+    const adConfig = configSnap.exists() ? configSnap.data() : ToonHiveData.buildDefaultAdConfig();
+    return { catalog, schedule, adConfig };
+  }catch(e){
+    console.warn('ToonHive: Firestore load failed, falling back to local data.', e);
+    return ToonHiveData.load();
+  }
+}
+
+/* ---------- data (Firestore if configured above, otherwise local demo/localStorage data) ---------- */
+const _data = await loadAllData();
+let CATALOG = _data.catalog;
+let SCHEDULE = _data.schedule;
+let AD_CONFIG = _data.adConfig;
+const POSTS={};
+CATALOG.forEach(c=>POSTS[c.id]=c);
+
+const feed = document.getElementById('feed');
+function renderPost(p){
+  feed.insertAdjacentHTML('beforeend', `
+    <a class="post-link" data-id="${p.id}">
+      <article class="post">
+        <div class="post-thumb" style="background:${p.grad}">
+          ${p.pinned ? '<div class="pin-pill">📌 Pinned</div>' : ''}
+          <span>${p.emoji}</span>
+        </div>
+        <div class="post-body">
+          <h2>${p.title}</h2>
+          <div class="byline">By ToonHive / ${p.date}</div>
+        </div>
+      </article>
+    </a>
+  `);
+}
+function renderAd(){
+  feed.insertAdjacentHTML('beforeend', `
+    <div class="ad-block">
+      <div class="ad-label">Advertisement</div>
+      <div class="ad-inner">/* paste your ad network's embed code here */</div>
+    </div>
+  `);
+}
+function renderTelegramBanner(){
+  feed.insertAdjacentHTML('beforeend', `
+    <div class="block-heading">Stay Connected</div>
+    <a href="#" class="tg-banner">
+      <div class="tg-ico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><path d="M21.5 4.5L2.7 11.9c-1.1.4-1.1 1.5 0 1.9l4.7 1.5 1.8 5.7c.2.6 1 .7 1.4.2l2.5-2.9 4.8 3.6c.7.5 1.7.1 1.9-.8l3.4-15.5c.2-1-.7-1.8-1.7-1.1z"/></svg>
+      </div>
+      <div><strong>Join our Telegram Channel</strong><span>Updates on every new upload</span></div>
+    </a>
+  `);
+}
+
+/* pinned first */
+CATALOG.filter(c=>c.pinned).forEach(c=>renderPost(c));
+
+let rendered=0;
+const BATCH=4, MAX=32;
+function loadMore(){
+  const remaining = MAX-rendered;
+  if(remaining<=0){
+    document.getElementById('loader').dataset.done='true';
+    document.getElementById('loader').style.display='none';
+    document.getElementById('pagination').style.display='flex';
+    buildPageNums();
+    document.getElementById('endMsg').style.display='block';
+    return;
+  }
+  const n=Math.min(BATCH,remaining);
+  for(let i=0;i<n;i++){
+    const entry = CATALOG[rendered % CATALOG.length];
+    renderPost({...entry, pinned:false}); // filler repeats aren't re-marked pinned
+    rendered++;
+  }
+  if(rendered % 8 === 0){ renderAd(); }
+  if(rendered % 12 === 0){ renderTelegramBanner(); }
+}
+function buildPageNums(){
+  const wrap=document.getElementById('pageNums');
+  [1,2,'…',65].forEach(n=>{
+    wrap.insertAdjacentHTML('beforeend', `<a href="#" class="${n===1?'active':''}">${n}</a>`);
+  });
+}
+
+/* Guarded: if IntersectionObserver isn't available in some environment,
+   fall back to a simple scroll listener instead of letting the whole
+   script throw (which would silently break every button below this line). */
+if(window.IntersectionObserver){
+  const observer=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{ if(e.isIntersecting) setTimeout(loadMore,300); });
+  },{rootMargin:'250px'});
+  observer.observe(document.getElementById('loader'));
+} else {
+  window.addEventListener('scroll', ()=>{
+    const loaderEl = document.getElementById('loader');
+    if(loaderEl.style.display==='none') return;
+    const rect = loaderEl.getBoundingClientRect();
+    if(rect.top < window.innerHeight + 250) loadMore();
+  });
+}
+
+/* ---------- detail view ---------- */
+const feedEl = document.getElementById('feed');
+const detailEl = document.getElementById('detailView');
+const loaderEl2 = document.getElementById('loader');
+
+function openDetail(p){
+  document.getElementById('detailHero').style.background = p.grad;
+  document.getElementById('detailHero').innerHTML = `<span>${p.emoji}</span>`;
+  document.getElementById('detailTitle').textContent = p.title;
+  document.getElementById('detailByline').textContent = `By ToonHive / ${p.date}`;
+  document.getElementById('detailInfo').innerHTML = `
+    <li><b>Title:</b> ${p.shortTitle}</li>
+    <li><b>Genres:</b> ${p.genres.join(' | ')}</li>
+    <li><b>Quality:</b> ${p.quality}</li>
+    <li><b>Audio Tracks:</b> ${p.audio}</li>
+    <li><b>Subtitle:</b> English</li>
+    <li><b>Total Episodes:</b> ${p.episodes}</li>
+    <li><b>Status:</b> Original release</li>
+    <li><b>Creator:</b> ToonHive</li>
+  `;
+  document.getElementById('detailView').querySelector('.dl-btn').onclick = (e)=>{
+    e.preventDefault();
+    openEpisodes(p);
+  };
+  const relWrap = document.getElementById('relatedList');
+  relWrap.innerHTML = `
+    <div class="ad-block" style="margin-bottom:16px;">
+      <div class="ad-label">Advertisement</div>
+      <div class="ad-inner">/* paste your ad network's embed code here */</div>
+    </div>
+  `;
+  // 2 related items pulled from the same demo pool
+  const allIds = Object.keys(POSTS).filter(id => id !== p.id);
+  for(let i=0;i<2 && i<allIds.length;i++){
+    const rp = POSTS[allIds[Math.floor(Math.random()*allIds.length)]];
+    relWrap.insertAdjacentHTML('beforeend', `
+      <a class="related post-link" data-id="${rp.id}">
+        <div class="rel-thumb" style="background:${rp.grad}"><span>${rp.emoji}</span></div>
+        <div class="rel-body"><h3>${rp.title}</h3><div class="byline">By ToonHive / ${rp.date}</div></div>
+      </a>
+    `);
+  }
+  feedEl.style.display='none';
+  loaderEl2.style.display='none';
+  document.getElementById('pagination').style.display='none';
+  document.getElementById('endMsg').style.display='none';
+  document.getElementById('episodesView').style.display='none';
+  detailEl.style.display='block';
+  window.scrollTo({top:0,behavior:'instant'});
+}
+function closeDetail(){
+  detailEl.style.display='none';
+  document.getElementById('episodesView').style.display='none';
+  feedEl.style.display='block';
+  if(loaderEl2.dataset.done !== 'true') loaderEl2.style.display='flex';
+  window.scrollTo({top:0,behavior:'instant'});
+}
+document.addEventListener('click', e=>{
+  const link = e.target.closest('.post-link');
+  if(link){
+    e.preventDefault();
+    const p = POSTS[link.dataset.id];
+    if(p) openDetail(p);
+  }
+});
+document.getElementById('backBtn').onclick = closeDetail;
+
+function hideAllViews(){
+  feedEl.style.display='none';
+  detailEl.style.display='none';
+  document.getElementById('episodesView').style.display='none';
+  document.getElementById('scheduleView').style.display='none';
+  loaderEl2.style.display='none';
+  document.getElementById('pagination').style.display='none';
+  document.getElementById('endMsg').style.display='none';
+}
+function openEpisodes(p){
+  hideAllViews();
+  document.getElementById('episodesTitle').textContent = p.title;
+  const list = document.getElementById('episodeList');
+  list.innerHTML='';
+
+  p.episodesData.forEach(ep=>{
+    list.insertAdjacentHTML('beforeend', `
+      <div class="ep-block">
+        <h2>Episode: ${String(ep.number).padStart(2,'0')}</h2>
+        <div class="ep-date">[Upload Date: ${ep.date}]</div>
+        <a href="#" class="ep-dl" data-url="${ep.url}" data-network="${ep.adNetwork}">Download</a>
+      </div>
+    `);
+  });
+
+  document.getElementById('episodesView').style.display='block';
+  window.scrollTo({top:0,behavior:'instant'});
+}
+document.addEventListener('click', e=>{
+  const btn = e.target.closest('.ep-dl');
+  if(!btn) return;
+  e.preventDefault();
+  runRewardedAdThenGo(btn.dataset.url, btn.dataset.network);
+});
+document.getElementById('backBtn2').onclick = ()=>{
+  hideAllViews();
+  detailEl.style.display='block';
+  window.scrollTo({top:0,behavior:'instant'});
+};
+
+/* ---------- rewarded interstitial ad flow ---------- */
+const adScrim = document.getElementById('adModalScrim');
+const adRing = document.getElementById('adCountdown');
+const adNote = document.getElementById('adNote');
+const adContinueBtn = document.getElementById('adContinueBtn');
+
+function goToEpisode(url){
+  if(!url || url === '#'){
+    alert('Demo mode: set a real url for this episode in CATALOG[...].episodesData to make this button work.');
+    return;
+  }
+  window.location.href = url; // swap for window.open(url, '_blank') if you'd rather open a new tab
+}
+
+function runRewardedAdThenGo(url, network){
+  showRewardedAd(network, ()=> goToEpisode(url));
+}
+
+/* Central switch — this is the only function you need to edit once you have real SDK credentials.
+   `network` comes from the individual episode's adNetwork field ('adsgram' | 'monetag' | 'none'). */
+function showRewardedAd(network, onComplete){
+  // 'none' — skip the ad modal entirely and go straight through
+  if(network === 'none'){ onComplete(); return; }
+
+  adScrim.style.display='flex';
+  adContinueBtn.style.display='none';
+  adNote.textContent = 'Please wait — your download unlocks after this ad';
+
+  // ---- MONETAG ------------------------------------------------------------
+  const monetagFn = window['show_' + AD_CONFIG.monetagZoneId];
+  if(network === 'monetag' && typeof monetagFn === 'function'){
+    monetagFn().then(()=>{ adScrim.style.display='none'; onComplete(); })
+               .catch(()=>{ adScrim.style.display='none'; onComplete(); });
+    return;
+  }
+
+  // ---- ADSGRAM --------------------------------------------------------------
+  if(network === 'adsgram' && window.Adsgram){
+    try{
+      const AdController = window.Adsgram.init({ blockId: AD_CONFIG.adsgramBlockId });
+      AdController.show()
+        .then(()=>{ adScrim.style.display='none'; onComplete(); })   // watched fully -> reward
+        .catch(()=>{ adScrim.style.display='none'; onComplete(); }); // skipped/error -> still let them through
+    }catch(e){ adScrim.style.display='none'; onComplete(); }
+    return;
+  }
+
+  // ---- DEMO fallback (SDK not wired up / not inside Telegram yet): a 5s countdown, then unlock ---
+  let n=5;
+  adRing.innerHTML = `<span>${n}</span>`;
+  const timer = setInterval(()=>{
+    n--;
+    if(n<=0){
+      clearInterval(timer);
+      adRing.innerHTML = '✓';
+      adNote.textContent = 'Ad complete — tap continue';
+      adContinueBtn.style.display='block';
+      adContinueBtn.onclick = (e)=>{ e.preventDefault(); adScrim.style.display='none'; onComplete(); };
+    } else {
+      adRing.innerHTML = `<span>${n}</span>`;
+    }
+  },1000);
+}
+
+/* drawer + search */
+const menuBtn=document.getElementById('menuBtn'), drawer=document.getElementById('drawer'), scrim=document.getElementById('scrim');
+menuBtn.onclick=()=>{drawer.classList.add('open');scrim.classList.add('open');};
+scrim.onclick=()=>{drawer.classList.remove('open');scrim.classList.remove('open');searchOverlay.classList.remove('open');};
+const searchBtn=document.getElementById('searchBtn'), searchOverlay=document.getElementById('searchOverlay'), searchInput=document.getElementById('searchInput'), searchClose=document.getElementById('searchClose');
+searchBtn.onclick=()=>{searchOverlay.classList.add('open');searchInput.focus();renderSearchResults('');};
+searchClose.onclick=()=>{searchOverlay.classList.remove('open');};
+
+function renderSearchResults(query){
+  const box = document.getElementById('searchResults');
+  const q = query.trim().toLowerCase();
+  if(!q){ box.innerHTML=''; return; }
+  const hits = CATALOG.filter(c=>{
+    const inTitle = c.shortTitle.toLowerCase().includes(q) || c.title.toLowerCase().includes(q);
+    const inAlt = c.altTitles.some(a=>a.toLowerCase().includes(q));
+    return inTitle || inAlt;
+  });
+  if(hits.length===0){
+    box.innerHTML = `<div class="search-empty">No series or episode matched "${query}"</div>`;
+    return;
+  }
+  box.innerHTML = hits.map(c=>{
+    const matchedAlt = c.altTitles.find(a=>a.toLowerCase().includes(q));
+    return `
+      <a class="search-hit" data-id="${c.id}">
+        <div class="hit-thumb" style="background:${c.grad}">${c.emoji}</div>
+        <div>
+          <div class="hit-title">${c.shortTitle}</div>
+          ${matchedAlt ? `<div class="hit-alt">aka ${c.altTitles.join(', ')}</div>` : ''}
+        </div>
+      </a>`;
+  }).join('');
+}
+searchInput.addEventListener('input', e=> renderSearchResults(e.target.value));
+document.getElementById('searchResults').addEventListener('click', e=>{
+  const hit = e.target.closest('.search-hit');
+  if(!hit) return;
+  e.preventDefault();
+  const p = POSTS[hit.dataset.id];
+  if(p){ searchOverlay.classList.remove('open'); openDetail(p); }
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){searchOverlay.classList.remove('open');drawer.classList.remove('open');scrim.classList.remove('open');}});
+
+/* theme toggle (mimics the moon-icon dark/light switch) */
+const toggle=document.getElementById('themeToggle');
+toggle.onclick=()=>{
+  const cur=document.body.getAttribute('data-theme');
+  const next = cur==='dark' ? 'light' : 'dark';
+  document.body.setAttribute('data-theme', next);
+  toggle.textContent = next==='dark' ? '🌙' : '☀️';
+};
+
+/* telegram mini app hooks */
+if(window.Telegram && window.Telegram.WebApp){
+  const tg=window.Telegram.WebApp;
+  tg.ready(); tg.expand();
+  if(tg.setHeaderColor) tg.setHeaderColor('#0f766e');
+  if(tg.setBackgroundColor) tg.setBackgroundColor('#131722');
+}
+
+/* init: load first batch immediately */
+/* ---------- release schedule ---------- */
+/* SCHEDULE already loaded above from ToonHiveData.load(); LANGS/DAYS available via ToonHiveData if needed */
+
+function fmtCountdown(targetIso){
+  const diff = Math.max(0, new Date(targetIso) - new Date());
+  const d = Math.floor(diff/86400000);
+  const h = Math.floor(diff%86400000/3600000);
+  const m = Math.floor(diff%3600000/60000);
+  const s = Math.floor(diff%60000/1000);
+  return {d,h,m,s};
+}
+
+function renderSchedule(filter){
+  const wrap = document.getElementById('scheduleList');
+  const q = (filter||'').trim().toLowerCase();
+  wrap.innerHTML='';
+  const matches = SCHEDULE.filter(s => !q || POSTS[s.catalogId].shortTitle.toLowerCase().includes(q));
+  if(matches.length===0){
+    wrap.innerHTML = `<div class="search-empty">No series matched "${filter}"</div>`;
+    return;
+  }
+  matches.forEach(s=>{
+      const c = POSTS[s.catalogId];
+      wrap.insertAdjacentHTML('beforeend', `
+        <div class="sched-card" data-target="${s.nextEpisodeAt}" data-id="${c.id}">
+          <div class="sched-row">
+            <div class="sched-poster" style="background:${c.grad}">${c.emoji}</div>
+            <div class="sched-info">
+              <h3>${c.shortTitle}</h3>
+              <div class="pill-row">
+                <span class="pill solid">Season ${s.season}</span>
+                <span class="pill solid">EP ${s.episode}</span>
+              </div>
+              <div class="lang-row">
+                ${s.langs.map(l=>`<span class="pill ${l===s.activeLang?'active':''}">${l}</span>`).join('')}
+              </div>
+              <div class="meta-row">
+                <span class="pill solid">📅 ${s.day}</span>
+                <span class="pill solid">🕐 ${s.time}</span>
+              </div>
+            </div>
+          </div>
+          <div class="countdown-box">
+            <div class="cd-label">NEXT EPISODE</div>
+            <div class="cd-tiles">
+              <div class="cd-tile"><b class="cd-d">0</b><span>DAYS</span></div>
+              <div class="cd-tile"><b class="cd-h">0</b><span>HRS</span></div>
+              <div class="cd-tile"><b class="cd-m">0</b><span>MIN</span></div>
+              <div class="cd-tile"><b class="cd-s">0</b><span>SEC</span></div>
+            </div>
+          </div>
+        </div>
+      `);
+    });
+  tickCountdowns();
+}
+function tickCountdowns(){
+  document.querySelectorAll('.sched-card').forEach(card=>{
+    const t = fmtCountdown(card.dataset.target);
+    card.querySelector('.cd-d').textContent = t.d;
+    card.querySelector('.cd-h').textContent = t.h;
+    card.querySelector('.cd-m').textContent = t.m;
+    card.querySelector('.cd-s').textContent = t.s;
+  });
+}
+setInterval(tickCountdowns, 1000);
+
+document.getElementById('scheduleSearch').addEventListener('input', e=> renderSchedule(e.target.value));
+document.getElementById('navSchedule').onclick = (e)=>{
+  e.preventDefault();
+  drawer.classList.remove('open'); scrim.classList.remove('open');
+  hideAllViews();
+  renderSchedule('');
+  document.getElementById('scheduleView').style.display='block';
+  window.scrollTo({top:0,behavior:'instant'});
+};
+document.getElementById('navHome').onclick = (e)=>{
+  e.preventDefault();
+  drawer.classList.remove('open'); scrim.classList.remove('open');
+  hideAllViews();
+  feedEl.style.display='block';
+  if(loaderEl2.dataset.done !== 'true') loaderEl2.style.display='flex';
+  window.scrollTo({top:0,behavior:'instant'});
+};
+document.getElementById('navAllSeries').onclick = (e)=>{ e.preventDefault(); document.getElementById('navHome').click(); };
+
+loadMore();
+</script>
+</body>
+</html>
